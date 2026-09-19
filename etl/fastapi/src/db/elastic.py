@@ -1,8 +1,7 @@
 from typing import Optional
 
-from elasticsearch import AsyncElasticsearch
-
 from core.config import config
+from elasticsearch import AsyncElasticsearch
 
 es: Optional[AsyncElasticsearch] = None
 

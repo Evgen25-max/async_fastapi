@@ -1,8 +1,8 @@
 from typing import Optional
 
-from redis.asyncio import Redis
-
 from core.config import config
+
+from redis.asyncio import Redis
 
 redis: Optional[Redis] = None
 
@@ -14,6 +14,8 @@ def init_redis() -> None:
         host=config.REDIS_HOST,
         port=config.REDIS_PORT,
         password=config.REDIS_PASSW,
+        socket_connect_timeout=config.REDIS_CONNECT_TIMEOUT,
+        socket_timeout=config.REDIS_SOCKET_TIMEOUT,
     )
 
 

@@ -1,3 +1,4 @@
+import json
 import logging
 from functools import lru_cache
 from typing import Optional
@@ -31,16 +32,44 @@ class FilmService:
             page_size: int,
             sort_by: list,
             filters: FilmFilter,
-            include_fields: set[str]
+            include_fields: set[str],
     ) -> list[Film]:
+        sort_str = json.dumps(sort_by, sort_keys=True)
+        filters_str = json.dumps(
+            filters.model_dump(exclude_none=True), sort_keys=True
+            )
+        include_fields_str = json.dumps(sorted(list(include_fields)))
+        cache_key = f"films_list:{offset}:{page_size}:{sort_str}:{filters_str}:{include_fields_str}"
+        cached_films = await self._get_films_list_from_cache(cache_key)
+        if cached_films is not None:
+            return [
+                Film.model_validate(film_dict) for film_dict in cached_films
+                ]
+
         films = await self._get_films_from_elastic(
             offset=offset,
             page_size=page_size,
             sort_by=sort_by,
             filters=filters,
-            include_fields=include_fields
             )
+
+        await self._put_films_list_to_cache(cache_key, films)
         return films
+
+    @handle_redis_errors
+    async def _get_films_list_from_cache(self, cache_key: str) -> Optional[list[dict]]:
+        try:
+            data = await self.redis.get(cache_key)
+        except RedisError as e:
+            logger.warning('Redis недоступен при поиске списка фильмов: %s', e)
+            return None
+        if not data:
+            return None
+        try:
+            return json.loads(data)
+        except json.JSONDecodeError:
+            logger.warning('Повреждённые данные в кеше для ключа %s', cache_key)
+            return None
 
     async def get_by_id(self, film_id: str) -> Optional[Film]:
         film = await self._film_from_cache(film_id)
@@ -68,7 +97,6 @@ class FilmService:
         page_size: int,
         sort_by: list,
         filters: FilmFilter,
-        include_fields: set[str]
     ) -> list[Film]:
         must_conditions = []
         filter_all = []
@@ -118,7 +146,6 @@ class FilmService:
             'from_': offset,
             'size': page_size,
         }
-        search_params['_source'] = list(include_fields)
         docs = await self.elastic.search(**search_params)
         films = [Film(**doc['_source']) for doc in docs['hits']['hits']]
         return films
@@ -132,17 +159,34 @@ class FilmService:
             return None
         if not data:
             return None
-        film = Film.parse_raw(data)
+        try:
+            film = Film.model_validate_json(data)
+        except ValidationError as e:
+            logger.warning(
+                'Повреждённые данные в кеше для фильма %s: %s', film_id, e
+                )
+            return None
+        film = Film.model_validate_json(data)
         return film
 
     @handle_redis_errors
     async def _put_film_to_cache(self, film: Film):
         try:
-            await self.redis.set(film.id, film.json(), FILM_CACHE_EXPIRE_IN_SECONDS)
+            await self.redis.set(film.id, film.model_dump_json(), FILM_CACHE_EXPIRE_IN_SECONDS)
         except RedisError as e:
             logger.warning("Redis недоступен при сохранении фильма %s: %s", film.id, e)
 
-
+    @handle_redis_errors
+    async def _put_films_list_to_cache(self, cache_key: str, films: list[Film]):
+        try:
+            films_data = [film.model_dump() for film in films]
+            await self.redis.set(
+                cache_key,
+                json.dumps(films_data),
+                FILM_CACHE_EXPIRE_IN_SECONDS
+            )
+        except RedisError as e:
+            logger.warning('Redis недоступен при сохранении списка фильмов: %s', e)
 
 @lru_cache()
 def get_film_service(
