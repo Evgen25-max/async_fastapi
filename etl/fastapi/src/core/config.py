@@ -23,7 +23,11 @@ class Settings(BaseSettings):
     ES_MAX_RETRIES: int = 3
     ES_REQUEST_TIMEOUT: int = 30
 
+    REDIS_CONNECT_TIMEOUT: int = 5
+    REDIS_SOCKET_TIMEOUT: int = 5
+
     model_config = SettingsConfigDict(
+        env_file='.env',
         env_file_encoding='utf-8',
         env_ignore_empty=True,
         extra='ignore',

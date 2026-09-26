@@ -3,12 +3,10 @@ from http import HTTPStatus
 from api.const import MAX_OFFSET, SORT_ORDERS, SORTABLE_FIELDS
 from api.filters import FilmFilter
 from api.utils import get_include_fields
-from elasticsearch import ConnectionError as ESConnectionError
-from elasticsearch import ConnectionTimeout, NotFoundError
+from elasticsearch import NotFoundError
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from services.film import FilmService, get_film_service
-
 
 router = APIRouter()
 
@@ -25,13 +23,6 @@ async def film_details(
             status_code=HTTPStatus.NOT_FOUND,
             detail=f'Film {film_id} not found',
         )
-    except (ESConnectionError, ConnectionTimeout):
-        raise HTTPException(
-            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-            detail='Сервис недоступен. Попробуйте позднее.',
-        )
-    except Exception:
-        raise
 
     return JSONResponse(content=film.model_dump())
 
@@ -84,8 +75,8 @@ async def all_films(
         page_size=page_size,
         sort_by=sort_by,
         filters=filters,
-        include_fields=include_fields
+        include_fields=include_fields,
         )
-    result = [film.model_dump() for film in films]
+    result = [film.model_dump(include=include_fields) for film in films]
 
     return JSONResponse(content=result)

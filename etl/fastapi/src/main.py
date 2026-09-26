@@ -2,7 +2,10 @@ import logging
 import logging.config
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from elasticsearch import ConnectionTimeout
+from elasticsearch.exceptions import ConnectionError as ESConnectionError
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from api.v1 import films
 from core.config import config
@@ -46,5 +49,29 @@ app = FastAPI(
     openapi_url='/api/openapi.json',
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(ESConnectionError)
+async def es_connection_error_handler(
+    request: Request, exc: ESConnectionError
+      ):
+    logger.error('Elasticsearch недоступен: %s', exc)
+    return JSONResponse(
+        status_code=503,
+        content={
+            'detail': 'Сервис недоступен. Попробуйте позднее.',
+        },
+    )
+
+
+@app.exception_handler(ConnectionTimeout)
+async def es_timeout_error_handler(request: Request, exc: ConnectionTimeout):
+    logger.error('Превышено время ожидания ответа от Elasticsearch: %s', exc)
+    return JSONResponse(
+        status_code=503,
+        content={
+            'detail': 'Сервис недоступен. Попробуйте позднее.',
+        },
+    )
 
 app.include_router(films.router, prefix='/api/v1/films', tags=['films'])
